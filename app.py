@@ -1,138 +1,138 @@
-
 import streamlit as st
 import pandas as pd
-from datetime import datetime, timedelta
+import plotly.express as px
+from datetime import datetime
 
-def load_data():
+def carregar_csv(caminho, colunas):
     try:
-        return pd.read_csv('data.csv')
+        df = pd.read_csv(caminho)
     except FileNotFoundError:
-        return pd.DataFrame(columns=['Data', 'Receita', 'Despesa', 'KM', 'Obs'])
+        df = pd.DataFrame(columns=colunas)
+    return df
 
-def save_data(df):
-    df.to_csv('data.csv', index=False)
+def salvar_csv(df, caminho):
+    df.to_csv(caminho, index=False)
 
-def load_despesas():
-    try:
-        return pd.read_csv('despesas_extras.csv')
-    except FileNotFoundError:
-        return pd.DataFrame(columns=['Data', 'Descrição', 'Valor'])
+corridas = carregar_csv("corridas.csv", ["data", "valor", "descricao", "km"])
+despesas = carregar_csv("despesas_extras.csv", ["data", "valor", "descricao"])
+metas = carregar_csv("metas.csv", ["meta"])
+receitas = carregar_csv("receitas.csv", ["data", "valor", "descricao"])
 
-def save_despesas(df):
-    df.to_csv('despesas_extras.csv', index=False)
+st.sidebar.title("Menu")
+pagina = st.sidebar.radio("Ir para:", ["Resumo Geral", "Nova Corrida", "Despesas Extras", "Receitas Manuais", "Metas", "Tabelas", "Gráficos"])
 
-def calcular_saldo_semana_passada(df):
-    if df.empty:
-        return 0.0
-    hoje = datetime.today().date()
-    segunda_atual = hoje - timedelta(days=hoje.weekday())
-    segunda_passada = segunda_atual - timedelta(days=7)
-    domingo_passado = segunda_atual - timedelta(days=1)
-    df['Data'] = pd.to_datetime(df['Data']).dt.date
-    semana_passada = df[(df['Data'] >= segunda_passada) & (df['Data'] <= domingo_passado)]
-    saldo = semana_passada['Receita'].sum() - semana_passada['Despesa'].sum()
-    return round(saldo, 2)
+st.sidebar.markdown("### Configurações de Consumo")
+consumo_medio = st.sidebar.number_input("Consumo médio (km/L)", value=10)
+preco_gasolina = st.sidebar.number_input("Preço da gasolina (R$/L)", value=5.89)
 
-st.title("Controle de Corridas Uber 🚗")
+if pagina == "Resumo Geral":
+    st.title("Resumo Geral")
+    ganhos_corridas = corridas["valor"].sum()
+    ganhos_receitas = receitas["valor"].sum()
+    gastos = despesas["valor"].sum()
+    lucro = ganhos_corridas + ganhos_receitas - gastos
+    st.metric("Ganhos (Corridas)", f"R$ {ganhos_corridas:.2f}")
+    st.metric("Ganhos (Manuais)", f"R$ {ganhos_receitas:.2f}")
+    st.metric("Gastos Totais", f"R$ {gastos:.2f}")
+    st.metric("Lucro Líquido", f"R$ {lucro:.2f}")
+    km_total = corridas["km"].sum()
+    gasto_estimado = (km_total / consumo_medio) * preco_gasolina if km_total else 0
+    st.metric("KM Rodados", f"{km_total:.2f} km")
+    st.metric("Gasto com Gasolina (estimado)", f"R$ {gasto_estimado:.2f}")
 
-df = load_data()
-despesas_extras = load_despesas()
+elif pagina == "Nova Corrida":
+    st.title("Adicionar Nova Corrida")
+    with st.form("nova_corrida"):
+        data = st.date_input("Data", value=datetime.today())
+        valor = st.number_input("Valor recebido (R$)", min_value=0.0, step=0.5)
+        km = st.number_input("Quilômetros rodados", min_value=0.0, step=0.1)
+        descricao = st.text_input("Descrição")
+        submit = st.form_submit_button("Salvar")
+        if submit:
+            nova = pd.DataFrame([[data, valor, descricao, km]], columns=["data", "valor", "descricao", "km"])
+            corridas = pd.concat([corridas, nova], ignore_index=True)
+            salvar_csv(corridas, "corridas.csv")
+            st.success("Corrida salva com sucesso!")
 
-if not df.empty:
-    df['Data'] = pd.to_datetime(df['Data']).dt.date
-    df['Data_str'] = df['Data'].astype(str)
+elif pagina == "Despesas Extras":
+    st.title("Adicionar Despesa Extra")
+    with st.form("nova_despesa"):
+        data = st.date_input("Data", value=datetime.today(), key="despesa_data")
+        valor = st.number_input("Valor (R$)", min_value=0.0, step=0.5, key="despesa_valor")
+        descricao = st.text_input("Descrição", key="despesa_desc")
+        submit = st.form_submit_button("Salvar")
+        if submit:
+            nova = pd.DataFrame([[data, valor, descricao]], columns=["data", "valor", "descricao"])
+            despesas = pd.concat([despesas, nova], ignore_index=True)
+            salvar_csv(despesas, "despesas_extras.csv")
+            st.success("Despesa salva com sucesso!")
 
-if not despesas_extras.empty:
-    despesas_extras['Data'] = pd.to_datetime(despesas_extras['Data']).dt.date
+elif pagina == "Receitas Manuais":
+    st.title("Adicionar Receita Manual")
+    with st.form("nova_receita"):
+        data = st.date_input("Data", value=datetime.today(), key="receita_data")
+        valor = st.number_input("Valor (R$)", min_value=0.0, step=0.5, key="receita_valor")
+        descricao = st.text_input("Descrição", key="receita_desc")
+        submit = st.form_submit_button("Salvar")
+        if submit:
+            nova = pd.DataFrame([[data, valor, descricao]], columns=["data", "valor", "descricao"])
+            receitas = pd.concat([receitas, nova], ignore_index=True)
+            salvar_csv(receitas, "receitas.csv")
+            st.success("Receita salva com sucesso!")
 
-saldo_total = df['Receita'].sum() - despesas_extras['Valor'].sum()
-st.metric("💰 Saldo Geral Atual", f"R$ {saldo_total:.2f}")
+elif pagina == "Metas":
+    st.title("Meta Mensal")
+    meta = metas["meta"].iloc[0] if not metas.empty else 0
+    nova_meta = st.number_input("Defina sua meta de lucro mensal (R$)", value=meta, step=50)
+    if st.button("Salvar Meta"):
+        metas = pd.DataFrame([[nova_meta]], columns=["meta"])
+        salvar_csv(metas, "metas.csv")
+        st.success("Meta atualizada!")
+    ganhos = corridas["valor"].sum() + receitas["valor"].sum()
+    gastos = despesas["valor"].sum()
+    lucro = ganhos - gastos
+    progresso = lucro / nova_meta if nova_meta else 0
+    st.metric("Lucro Atual", f"R$ {lucro:.2f}")
+    st.progress(min(progresso, 1.0))
 
-# Formulário padrão de corrida
-st.subheader("📝 Nova Corrida")
-with st.form("nova_corrida"):
-    data = st.date_input("Data", value=datetime.today(), key="nova_data")
-    receita = st.number_input("Receita (R$)", min_value=0.0, key="nova_receita")
-    km = st.number_input("KM percorrido", min_value=0.0, key="nova_km")
-    despesa_calculada = (km / 10) * 5.89
-    st.markdown(f"**Despesa estimada com combustível:** R$ {despesa_calculada:.2f}")
-    obs = st.text_input("Observações", key="nova_obs")
-    enviar = st.form_submit_button("Registrar corrida")
+elif pagina == "Tabelas":
+    st.title("Visualizar e Editar Dados")
+    aba = st.radio("Selecione a tabela:", ["Corridas", "Despesas", "Receitas"])
+    if aba == "Corridas":
+        st.subheader("Corridas")
+        edit_corridas = st.data_editor(corridas, num_rows="dynamic", use_container_width=True)
+        if st.button("Salvar Corridas Editadas"):
+            salvar_csv(edit_corridas, "corridas.csv")
+            st.success("Corridas atualizadas com sucesso!")
+    elif aba == "Despesas":
+        st.subheader("Despesas Extras")
+        edit_despesas = st.data_editor(despesas, num_rows="dynamic", use_container_width=True)
+        if st.button("Salvar Despesas Editadas"):
+            salvar_csv(edit_despesas, "despesas_extras.csv")
+            st.success("Despesas atualizadas com sucesso!")
+    elif aba == "Receitas":
+        st.subheader("Receitas Manuais")
+        edit_receitas = st.data_editor(receitas, num_rows="dynamic", use_container_width=True)
+        if st.button("Salvar Receitas Editadas"):
+            salvar_csv(edit_receitas, "receitas.csv")
+            st.success("Receitas atualizadas com sucesso!")
 
-    if enviar:
-        nova_linha = pd.DataFrame([[data, receita, despesa_calculada, km, obs]],
-                                   columns=['Data', 'Receita', 'Despesa', 'KM', 'Obs'])
-        df = pd.concat([df, nova_linha], ignore_index=True)
-        save_data(df)
-        st.success("Corrida registrada com sucesso!")
-        df['Data'] = pd.to_datetime(df['Data']).dt.date
-        df['Data_str'] = df['Data'].astype(str)
-
-saldo_semana_passada = calcular_saldo_semana_passada(df)
-st.info(f"💡 Saldo acumulado da semana passada: R$ {saldo_semana_passada:.2f}")
-
-if datetime.today().weekday() == 0:
-    st.subheader("⛽ Registrar Abastecimento de Segunda-feira")
-    valor_abastecido = st.number_input("Valor abastecido (R$)", min_value=0.0, step=1.0, key="auto_abastecimento")
-    if st.button("Registrar abastecimento com saldo acumulado"):
-        nova_despesa = pd.DataFrame([[datetime.today().date(), 'Abastecimento semanal', valor_abastecido]],
-                                    columns=['Data', 'Descrição', 'Valor'])
-        despesas_extras = pd.concat([despesas_extras, nova_despesa], ignore_index=True)
-        save_despesas(despesas_extras)
-        st.success("Abastecimento registrado com sucesso!")
-
-st.markdown("---")
-
-# Entrada de ganho manual
-st.subheader("➕ Adicionar Receita Manual")
-with st.expander("Clique aqui para registrar ganho manual"):
-    data_receita = st.date_input("Data da receita", value=datetime.today(), key="manual_data_receita")
-    valor_receita = st.number_input("Valor (R$)", min_value=0.0, key="manual_valor_receita")
-    obs_receita = st.text_input("Observação", key="manual_obs_receita")
-    if st.button("Registrar receita manual"):
-        nova = pd.DataFrame([[data_receita, valor_receita, 0.0, 0.0, obs_receita]],
-                            columns=['Data', 'Receita', 'Despesa', 'KM', 'Obs'])
-        df = pd.concat([df, nova], ignore_index=True)
-        save_data(df)
-        st.success("Receita manual registrada com sucesso!")
-
-# Despesa extra manual
-st.subheader("➕ Adicionar Despesa Extra Manualmente")
-with st.expander("Clique aqui para registrar despesa"):
-    data_extra = st.date_input("Data da despesa", value=datetime.today(), key="manual_data")
-    descricao_extra = st.text_input("Descrição", value="Abastecimento semanal", key="manual_desc")
-    valor_extra = st.number_input("Valor (R$)", min_value=0.0, key="manual_valor")
-    if st.button("Registrar despesa extra manual"):
-        nova_extra = pd.DataFrame([[data_extra, descricao_extra, valor_extra]],
-                                  columns=['Data', 'Descrição', 'Valor'])
-        despesas_extras = pd.concat([despesas_extras, nova_extra], ignore_index=True)
-        save_despesas(despesas_extras)
-        st.success("Despesa extra registrada com sucesso!")
-
-st.markdown("---")
-
-# Editar lançamento
-st.subheader("✏️ Editar Lançamento")
-if not df.empty:
-    index = st.selectbox("Escolha o registro para editar:", df.index, format_func=lambda i: f"{df.loc[i, 'Data']} - R$ {df.loc[i, 'Receita']}")
-    if st.button("Editar este registro"):
-        with st.form("editar_corrida"):
-            nova_data = st.date_input("Data", value=df.loc[index, 'Data'], key="edit_data")
-            nova_receita = st.number_input("Receita", value=float(df.loc[index, 'Receita']), key="edit_receita")
-            nova_km = st.number_input("KM", value=float(df.loc[index, 'KM']), key="edit_km")
-            nova_despesa = (nova_km / 10) * 5.89
-            nova_obs = st.text_input("Observações", value=df.loc[index, 'Obs'], key="edit_obs")
-            confirm = st.form_submit_button("Salvar alterações")
-            if confirm:
-                df.loc[index] = [nova_data, nova_receita, nova_despesa, nova_km, nova_obs]
-                save_data(df)
-                st.success("Registro atualizado com sucesso!")
-
-st.markdown("---")
-
-# Tabela e resumo
-st.subheader("📋 Tabela de Corridas")
-st.dataframe(df.drop(columns=['Data_str']) if not df.empty else pd.DataFrame())
-
-st.subheader("📋 Tabela de Despesas Extras")
-st.dataframe(despesas_extras if not despesas_extras.empty else pd.DataFrame())
+elif pagina == "Gráficos":
+    st.title("Gráficos de Desempenho")
+    if not corridas.empty:
+        corridas["data"] = pd.to_datetime(corridas["data"])
+        corridas["semana"] = corridas["data"].dt.isocalendar().week
+        semanal = corridas.groupby("semana").sum(numeric_only=True).reset_index()
+        fig = px.bar(semanal, x="semana", y="valor", title="Ganhos por Semana", text_auto=True)
+        if not metas.empty:
+            meta = metas["meta"].iloc[0]
+            fig.add_hline(y=meta / 4, line_dash="dash", line_color="red", annotation_text="Meta semanal", annotation_position="top right")
+        st.plotly_chart(fig)
+        corridas["custo_estimado"] = (corridas["km"] / consumo_medio) * preco_gasolina
+        fig2 = px.bar(corridas, x="data", y="custo_estimado", hover_data=["descricao", "km", "valor"], title="Gasto estimado com combustível por corrida", text_auto=".2f")
+        st.plotly_chart(fig2)
+        corridas["lucro_liquido"] = corridas["valor"] - corridas["custo_estimado"]
+        fig3 = px.bar(corridas, x="data", y="lucro_liquido", hover_data=["descricao", "km", "valor", "custo_estimado"], title="Lucro líquido por corrida", text_auto=".2f", color="lucro_liquido")
+        st.plotly_chart(fig3)
+    else:
+        st.info("Nenhuma corrida registrada ainda.")

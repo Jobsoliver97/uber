@@ -1,4 +1,5 @@
-Data,Descrição,Valor
-2025-06-02,Abastecimento semanal,200
-2025-06-09,Abastecimento semanal,236.39
-2025-06-17,Abastecimento semanal,100.0
+data,valor,descricao
+2025-06-02,200.0,
+2025-06-09,237.0,
+2025-06-17,100.0,
+2025-06-05,58.39,ESTAPAR
